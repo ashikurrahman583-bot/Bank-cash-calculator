@@ -38,13 +38,18 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI","Not
 .khist{height:170px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;text-align:right;color:var(--muted);padding:0 6px}
 .kh{flex:none;margin-bottom:10px;font-size:15px;cursor:pointer}
 .kh:first-child{margin-top:auto}
-.kexpr{text-align:right;font-size:22px;font-weight:600;min-height:32px;word-break:break-all;padding:6px 6px 0}
+.kexpr{display:block;width:100%;text-align:right;font-size:22px;font-weight:600;min-height:38px;padding:6px 6px 2px;border:0;outline:0;background:transparent;color:inherit;font-family:inherit;border-radius:10px;cursor:text}
+.kexpr:focus{background:var(--card)}
 .kres{text-align:right;font-size:38px;font-weight:700;padding:0 6px 10px;border-bottom:1px solid var(--border);word-break:break-all}
 .kpad{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
 .kpad button{height:56px;border:0;border-radius:14px;background:transparent;color:var(--text);font-size:26px;font-weight:600;cursor:pointer;font-family:inherit}
 .kpad button:hover{background:var(--card)}
 .kpad button:active{transform:scale(.94)}
 .kpad .op{color:#ff7a33}
+.kres{cursor:pointer}
+.kh .he:hover,.kh .hr:hover{color:var(--text)}
+.kh .x{opacity:.45;margin-right:8px;font-size:12px;padding:2px 4px}
+.kh .x:hover{opacity:1;color:#ff7a33}
 .kpad .eq{background:#ff7a33;color:#fff;border-radius:50%;height:64px;width:64px;justify-self:center;font-size:30px}
 .kpad .eq:hover{background:#ff8b4d}
 .scheme{flex:1 1 600px;min-width:0;background:var(--panel);border-radius:22px;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.2)}
@@ -132,7 +137,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI","Not
 </div>
 <div class="calc" aria-label="Calculator">
   <div class="khist" id="kHist"></div>
-  <div class="kexpr" id="kExpr">0</div>
+  <input class="kexpr" id="kExpr" type="text" inputmode="none" autocomplete="off" spellcheck="false" placeholder="0" aria-label="হিসাব সম্পাদনা">
   <div class="kres" id="kRes">= 0</div>
   <div class="kpad" id="kPad">
     <button data-k="C" class="op">C</button><button data-k="⌫" class="op">⌫</button><button data-k="%" class="op">%</button><button data-k="÷" class="op">÷</button>
@@ -290,7 +295,7 @@ document.getElementById("lang").onclick=function(){
 };
 (function(){
 const hEl=document.getElementById("kHist"),eEl=document.getElementById("kExpr"),rEl=document.getElementById("kRes");
-let expr="",fresh=false,err=false,hist=[];
+let expr="",fresh=false,err=false,hist=[],pos=0;
 try{hist=JSON.parse(localStorage.getItem("tkHist")||"[]")}catch(e){hist=[]}
 const OPS="+−×÷";
 const fmtNum=s=>s.replace(/\d+(\.\d*)?/g,m=>{const p=m.split(".");return p[0].replace(/\B(?=(\d{3})+(?!\d))/g,",")+(p.length>1?"."+p[1]:"")});
@@ -308,15 +313,25 @@ function ev(s){
   try{const v=ex();if(i<s.length)return null;return isFinite(v)?parseFloat(v.toPrecision(15)):"E"}catch(e){return null}
 }
 function render(){
-  hEl.innerHTML=hist.slice(-40).map(h=>`<div class="kh" data-r="${h.r}"><div>${dg(fmtNum(h.e))}</div><div>= ${dg(fmtR(h.r))}</div></div>`).join("");
+  const sl=hist.slice(-40),off=hist.length-sl.length;
+  hEl.innerHTML=sl.map((h,j)=>`<div class="kh" data-i="${off+j}"><div class="he" title="সম্পাদনা করুন"><span class="x" data-del="${off+j}" title="মুছুন">✕</span>${dg(fmtNum(h.e))}</div><div class="hr">= ${dg(fmtR(h.r))}</div></div>`).join("");
   hEl.scrollTop=hEl.scrollHeight;
-  eEl.textContent=dg(fmtNum(expr))||dg(0);
+  if(document.activeElement===eEl){eEl.value=dg(expr);try{eEl.setSelectionRange(pos,pos)}catch(e){}}
+  else eEl.value=expr?dg(fmtNum(expr)):dg(0);
   const v=ev(expr);
   rEl.textContent=v==="E"?(err?"ত্রুটি: ০ দিয়ে ভাগ":"= —"):"= "+dg(v===null?"0":fmtR(v));
 }
 const labels=()=>document.querySelectorAll("#kPad button[data-k]").forEach(b=>{if(/^[0-9]$/.test(b.dataset.k))b.textContent=dg(b.dataset.k)});
 window.kRefresh=()=>{labels();render()};
-function press(k){err=false;
+function press(k){
+  if(k==="C"||k==="="){pressEnd(k);pos=expr.length;return}
+  const p=Math.min(pos,expr.length);let after=expr.slice(p);
+  if(fresh&&/^[0-9.]$/.test(k))after="";
+  expr=expr.slice(0,p);
+  pressEnd(k);
+  pos=expr.length;expr+=after;render();
+}
+function pressEnd(k){err=false;
   if(k==="C"){expr="";fresh=false}
   else if(k==="⌫"){expr=expr.slice(0,-1);fresh=false}
   else if(k==="="){
@@ -352,9 +367,25 @@ document.getElementById("kPad").addEventListener("click",e=>{
   press(b.dataset.k);
 });
 hEl.addEventListener("click",e=>{
-  const d=e.target.closest(".kh");
-  if(d){expr=d.dataset.r.replace("-","−");fresh=true;render()}
+  const x=e.target.closest(".x");
+  if(x){hist.splice(+x.dataset.del,1);save();render();return}
+  const d=e.target.closest(".kh");if(!d)return;
+  const h=hist[+d.dataset.i];if(!h)return;
+  if(e.target.closest(".he")){expr=h.e;fresh=false;pos=expr.length;eEl.focus();render()}
+  else{expr=String(h.r).replace("-","−");fresh=true;pos=expr.length;render()}
 });
+const sync=()=>{pos=eEl.selectionStart==null?expr.length:eEl.selectionStart};
+eEl.addEventListener("focus",()=>{pos=expr.length;render()});
+eEl.addEventListener("blur",()=>{pos=expr.length;render()});
+["click","keyup","select"].forEach(n=>eEl.addEventListener(n,sync));
+eEl.addEventListener("input",()=>{
+  const raw=en(eEl.value),c=eEl.selectionStart==null?raw.length:eEl.selectionStart;
+  const cl=s=>s.replace(/\*/g,"×").replace(/\//g,"÷").replace(/-/g,"−").replace(/[^0-9.+−×÷%]/g,"");
+  expr=cl(raw);pos=cl(raw.slice(0,c)).length;fresh=false;err=false;render();
+});
+eEl.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();press("=")}});
+rEl.addEventListener("click",()=>{const v=ev(expr);if(v!==null&&v!=="E"){expr=ns(v).replace("-","−");fresh=true;pos=expr.length;render()}});
+document.getElementById("kPad").addEventListener("mousedown",e=>e.preventDefault());
 document.addEventListener("keydown",e=>{
   const tg=e.target;if(/^(INPUT|SELECT|TEXTAREA)$/.test(tg.tagName)||(tg.tagName==="BUTTON"&&!tg.closest("#kPad"))||e.ctrlKey||e.metaKey||e.altKey)return;
   const m={"*":"×","/":"÷","-":"−","Enter":"=","=":"=","Backspace":"⌫","Escape":"C","Delete":"C"};
@@ -369,7 +400,7 @@ window.kAdd=function(n){
   else if(expr==="−")expr+=n;
   else if(OPS.includes(expr.slice(-1)))expr+=n;
   else expr+="+"+n;
-  fresh=false;
+  fresh=false;pos=expr.length;
   render();
   return true;
 };
